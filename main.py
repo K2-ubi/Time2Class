@@ -4,6 +4,9 @@ from flask import Flask, jsonify
 import urllib.request
 from html_table_parser.parser import HTMLTableParser
 
+# Required becasue libraly htmlparser have problems
+import collections.abc
+collections.Callable = collections.abc.Callable
 
 class scraping:
     def __init__(self):
@@ -12,6 +15,7 @@ class scraping:
         self.content_div = None
         self.url = ""
         self.plan = ""
+        self.plan_path = ""
 
     def GetPLanUrl(self):
         self.response = requests.get(self.url)
@@ -24,31 +28,34 @@ class scraping:
                 return self.plan
 
     def GetClassReference(self):
-        planurl = scrap.GetPLanUrl()
-
-        self.response = requests.get(planurl)
+        self.response = requests.get(self.plan)
         self.soup = BeautifulSoup(self.response.content, 'html.parser')
         self.content_div = self.soup.find('a', string="Oddziały")
         if self.content_div["href"]:
-            return f"{planurl + "/" + self.content_div["href"]}"
+            result = f"{self.plan + "/" + self.content_div["href"]}"
+            self.plan_path = result
+            return result
 
     def GetClassPlan(self, whichclass):
-        planurl = scrap.GetClassReference()
+        if len(self.url) < 1:
+            return None
+        cache.CheckIfUrlisCache()
+        planurl = self.plan_path
+        if planurl == None:
+            return None
 
         self.response = requests.get(planurl)
         self.soup = BeautifulSoup(self.response.content, 'html.parser')
         self.content_div = self.soup.find('a', string=whichclass)
-
         if self.content_div and self.content_div.get("href"):
             href = self.content_div["href"]
             full_url = f"{self.plan}/{href}"
-            print(full_url)
             format = Format()
-            format.Formatdata(fulurl=full_url)
             return format.Formatdata(fulurl=full_url)
         else:
             print(
                 f"Class {whichclass} don't exist in this system"
+                "if you sure that it exist create an issue on our github"
             )
             return None
 class Format:
@@ -73,7 +80,19 @@ class Format:
         self.table = self.p.tables[1]
         return self
 
+class Caching:
+    def CheckIfUrlisCache(self):
+        if len(scrap.plan) <= 5:
+            print("Url of site was not cached")
+            scrap.GetPLanUrl()
+            print(f"Now cached : {scrap.plan}")
+        if len(scrap.plan_path) <= 5:
+            print("Url of site was not cached")
+            scrap.GetClassReference()
+            print(f"Now cached : {scrap.plan_path}")
+
 scrap = scraping()
+cache = Caching()
 app = Flask(__name__)
 @app.route("/")
 def home():
@@ -86,7 +105,7 @@ def home():
 def home_with_id(id):
     full_url = scrap.GetClassPlan(str(id).upper())
     if full_url is None:
-        return f"Plan for {id} class not found"
+        return f"Plan for class {id} not found"
     return jsonify(full_url.table)
 
 if __name__ == "__main__":
