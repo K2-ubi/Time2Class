@@ -1,0 +1,11 @@
+import time
+times = time.localtime(time.time())
+localtime = time.asctime(times)
+d = time.strftime("%a")
+days  = ["Mon", "Tue", "Wed","Thu", "Fri"]
+if (days.__contains__(d)):
+    kls = input("Wpisz klasse: ")
+    id = kls.upper()
+    print(id)
+else:
+    print(localtime,"have a nice day")
