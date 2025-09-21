@@ -1,3 +1,4 @@
+import threading # Allow to run scheduler
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify
@@ -5,16 +6,25 @@ import urllib.request
 import time
 from html_table_parser.parser import HTMLTableParser
 
+
 # Required becasue libraly htmlparser have problems
 import collections.abc
 collections.Callable = collections.abc.Callable
+
+
+time_scheduler = 3600 # How frequently scheduler should validate data (In seconds)
+cachedata = [
+    {}
+]
+
+classtoScrap = []
 
 class scraping:
     def __init__(self):
         self.soup = None
         self.response = None
         self.content_div = None
-        self.url = "https://tk.krakow.pl/"
+        self.url = ""
         self.plan = ""
         self.plan_path = ""
         self.cache = Caching(self)
@@ -32,7 +42,6 @@ class scraping:
         for a in self.soup.find_all("a"):
             if a.get_text(strip=True) == "Plan zajęć":
                 self.plan = a["href"]
-                print(f"fdsfsdf : {self.plan}")
                 return self.plan
 
 
@@ -44,6 +53,7 @@ class scraping:
         if self.content_div["href"]:
             result = f"{self.plan}/{self.content_div['href']}"
             self.plan_path = result
+            print(result)
             return result
 
     def GetClassPlan(self, whichclass):
@@ -54,15 +64,22 @@ class scraping:
         planurl = self.plan_path
         if planurl == None:
             return None
+        try:
+            self.response = requests.get(planurl)
+        except requests.exceptions.ConnectionError:
+            print("Check your internet connection")
+            return None
 
-        self.response = requests.get(planurl)
+
         self.soup = BeautifulSoup(self.response.content, 'html.parser')
         self.content_div = self.soup.find('a', string=whichclass)
         if self.content_div and self.content_div.get("href"):
             href = self.content_div["href"]
             full_url = f"{self.plan}/{href}"
             format = Format()
-            return format.Formatdata(fulurl=full_url)
+            data = format.Formatdata(fulurl=full_url)
+            addtocache(whichclass=whichclass, data=data)
+            return data
         else:
             print(
                 f"Class {whichclass} don't exist in this system"
@@ -76,6 +93,7 @@ class Format:
         self.data = None
         self.p = None
         self.xhtml = None
+        self.cache = Caching
 
     def Formatdata(self,fulurl):
 
@@ -89,7 +107,7 @@ class Format:
         self.p.feed(self.xhtml)
 
         self.table = self.p.tables[1]
-        return self
+        return self.table
 
 class Caching:
     def __init__(self, scraper):
@@ -111,6 +129,9 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
+    if checkifdatawasscraped("1I"):
+        print("test")
+        return jsonify(cachedata[0]["1I"])
     start = time.perf_counter()
     data = scrap.GetClassPlan("1I")
     if data is None:
@@ -119,12 +140,13 @@ def home():
     global times
     times += 1
     print(f"time for execution {elapsed:.4f}")
-    return jsonify(data.table)
+    return jsonify(cachedata[0]["1I"])
 
-@app.route("/<id>")
-def home_with_id(id):
+@app.route("/<item_id>")
+def home_with_id(item_id: str):
     global times
-    if id == "about":
+
+    if item_id == "about":
         return (
             {
                 "author": "Trabage",
@@ -132,7 +154,7 @@ def home_with_id(id):
                 "Suggestion": "k2gemer",
             }
         )
-    elif id == "info":
+    elif item_id == "info":
         return (
             {
                 "version": "Python 3.12.5",
@@ -140,7 +162,7 @@ def home_with_id(id):
                 "Maintainer": "Trabage"
             }
         )
-    elif id == "data":
+    elif item_id == "data":
         return (
             {
                 "cached_url": scrap.plan,
@@ -150,20 +172,51 @@ def home_with_id(id):
             }
 
         )
+    elif item_id == "cache":
+        return cachedata[0]
+
+    if checkifdatawasscraped(item_id):
+        data = cachedata[0][item_id.upper()]
+        return jsonify(data["data"])
 
     start = time.perf_counter()
-
-    full_url = scrap.GetClassPlan(str(id).upper())
-    print(scrap.plan_path)
-    print(scrap.plan)
-
+    table = scrap.GetClassPlan(item_id.upper())
+    if table is None:
+        return f"Plan for class {item_id} not found"
     elapsed = time.perf_counter() - start
-    print(f"time for execution {elapsed:.4f}")
+    times += 1
+    addtocache(whichclass=item_id, data=table)
+    return jsonify(table)
 
-    if full_url is None:
-        return f"Plan for class {id} not found"
-    times =+ 1
-    return jsonify(full_url.table)
+
+
+# Type is predefine to elimate problems with types
+# I don't like dynamic typing
+
+def addtocache(whichclass: str, data: dict):
+    if whichclass.upper() not in classtoScrap:
+        classtoScrap.append(whichclass.upper())
+        print(classtoScrap)
+    cachedata[0][str(whichclass).upper()] = {"data": data} # Adding to cache
+
+def checkifdatawasscraped(klasaa: str) -> bool:
+    return str(klasaa).upper() in cachedata[0] # Returing Boolean
+
+def CheckIfClaasesAreUpToDate():
+    while True:
+        if len(classtoScrap) < 1:
+            time.sleep(time_scheduler)
+        else:
+            for i in classtoScrap:
+                table = scrap.GetClassPlan(i.upper())
+                cachedata[0][str(i.upper())] = {"data": table}
+                print(f"Updated class {i.upper()}")
+                print(f"Next scheduler update in {time_scheduler} seconds")
+                time.sleep(time_scheduler)
+
+
+
 
 if __name__ == "__main__":
+    threading.Thread(target=CheckIfClaasesAreUpToDate, daemon=True).start() # Running async not blocking main thread
     app.run()
