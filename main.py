@@ -1,10 +1,14 @@
-import threading # Allow to run scheduler
+import threading # Allow to run scheduler async
+
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify
 import urllib.request
-import time
 from html_table_parser.parser import HTMLTableParser
+
+import sched, time
+
+scheduler = sched.scheduler(time.time, time.sleep)
 
 
 # Required becasue libraly htmlparser have problems
@@ -203,23 +207,25 @@ def checkifdatawasscraped(klasaa: str) -> bool:
     return str(klasaa).upper() in cachedata[0] # Returing Boolean
 
 def CheckIfClaasesAreUpToDate():
-    while True:
         if len(classtoScrap) < 1:
             time.sleep(time_scheduler)
         else:
+            wait = time_scheduler / len(classtoScrap)
             for i in classtoScrap:
                 table = scrap.GetClassPlan(i.upper())
                 cachedata[0][str(i.upper())] = {"data": table}
                 print(f"Updated class {i.upper()}")
-                print(f"Next scheduler update in {time_scheduler} seconds")
-                time.sleep(time_scheduler)
-                time.sleep(10)
+                time.sleep(wait)
             print(f"Next scheduler update in {time_scheduler} seconds")
-            time.sleep(time_scheduler)
+            scheduler.enter(time_scheduler, 5, CheckIfClaasesAreUpToDate)
+scheduler.enter(1, 5, CheckIfClaasesAreUpToDate)
 
 
 
 
 if __name__ == "__main__":
-    threading.Thread(target=CheckIfClaasesAreUpToDate, daemon=True).start() # Running async not blocking main thread
-    app.run()
+    if len(scrap.url) > 5:
+        threading.Thread(target=scheduler.run, daemon=True).start()
+        app.run() # Always run last
+    else:
+        print("Url jest pusty")
