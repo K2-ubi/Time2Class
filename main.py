@@ -213,6 +213,9 @@ def CheckIfClaasesAreUpToDate():
                 print(f"Updated class {i.upper()}")
                 print(f"Next scheduler update in {time_scheduler} seconds")
                 time.sleep(time_scheduler)
+                time.sleep(10)
+            print(f"Next scheduler update in {time_scheduler} seconds")
+            time.sleep(time_scheduler)
 
 
 
